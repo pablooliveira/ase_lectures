@@ -1,12 +1,16 @@
 SRCS = $(wildcard *.md)
 ALL_HTML = $(patsubst %.md,%.html,$(SRCS))
+ALL_PDF = $(patsubst %.md,%.pdf,$(SRCS))
+
+all: html pdf
 
 html: $(ALL_HTML)
+pdf: $(ALL_PDF)
 
 %.html: %.md
-	/home/users/poliveira/.cabal/bin/pandoc -s --mathjax -f markdown $< -o $@
+	pandoc -s --mathjax -f markdown $< -o $@
 %.pdf: %.md
-	/home/users/poliveira/.cabal/bin/pandoc -f markdown $< -o $@
+	pandoc -f markdown $< -o $@
 
 clean:
-	rm $(ALL_HTML)
+	rm $(ALL_HTML) $(ALL_PDF)
