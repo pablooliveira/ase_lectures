@@ -6,7 +6,7 @@ all: pdf
 pdf: $(ALL_PDF)
 
 %.pdf: %.md
-	pandoc -t beamer -f markdown $< -o $@
+	pandoc --variable fontsize=9pt -t beamer -f markdown $< -o $@
 
 %.tex: %.md
 	pandoc -s -t beamer -f markdown $< -o $@
