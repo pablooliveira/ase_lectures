@@ -13,4 +13,4 @@ pdf: $(ALL_PDF)
 	pandoc -f markdown $< -o $@
 
 clean:
-	rm $(ALL_HTML) $(ALL_PDF)
+	rm -f $(ALL_HTML) $(ALL_PDF)
