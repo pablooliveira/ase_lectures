@@ -1,0 +1,1052 @@
+\documentclass[ignorenonframetext,]{beamer}
+\usepackage{amssymb,amsmath}
+\usepackage{ifxetex,ifluatex}
+\usepackage{fixltx2e} % provides \textsubscript
+\ifxetex
+  \usepackage{fontspec,xltxtra,xunicode}
+  \defaultfontfeatures{Mapping=tex-text,Scale=MatchLowercase}
+\else
+  \ifluatex
+    \usepackage{fontspec}
+    \defaultfontfeatures{Mapping=tex-text,Scale=MatchLowercase}
+  \else
+    \usepackage[utf8]{inputenc}
+  \fi
+\fi
+\usepackage{enumerate}
+% Comment these out if you don't want a slide with just the
+% part/section/subsection/subsubsection title:
+\AtBeginPart{\frame{\partpage}}
+\AtBeginSection{\frame{\sectionpage}}
+\AtBeginSubsection{\frame{\subsectionpage}}
+\AtBeginSubsubsection{\frame{\subsubsectionpage}}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt plus 2pt minus 1pt}
+\setlength{\emergencystretch}{3em}  % prevent overfull lines
+\setcounter{secnumdepth}{0}
+\usepackage{rtsched}
+
+\title{Architecture des Systèmes Embarqués: Systèmes Temps-Réel}
+\author{Pablo de Oliveira
+                \textless{}\href{mailto:pablo.oliveira@uvsq.fr}{\texttt{pablo.oliveira@uvsq.fr}}\textgreater{}}
+
+\begin{document}
+\frame{\titlepage}
+
+\section{Introduction}
+
+\begin{frame}\frametitle{Plan du cours}
+
+\begin{enumerate}[1.]
+\setcounter{enumi}{4}
+\item
+  Systèmes temps-réel
+\end{enumerate}
+
+\begin{itemize}
+\item
+  Présentation des systèmes temps-réel
+\item
+  Tâches périodiques et sporadiques / priorités
+\item
+  Ordonnançement
+\item
+  Problèmes: Inversion de priorité, Famine, Race Conditions
+\item
+  Polling actif ou évenements
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Système Temps-Réel}
+
+\begin{quote}
+In real-time computing the correctness of the system depends not only on
+the logical result of the computation but also on the time at which
+results are produced. J.A. Stankovic, IEEE Computer 1988.
+\end{quote}
+
+Exemples de systèmes temps-réel:
+
+\begin{itemize}
+\item
+  Centrale nucléaire
+\item
+  Contrôle vitesse d'un train
+\item
+  Robotique
+\item
+  Avionique
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Objectifs}
+
+\begin{itemize}
+\item
+  Déterminisme logique: les sorties sont déterminées par les entrées et
+  éventuellement l'état logique interne.
+\item
+  Déterminisme temporel: le système respecte les échéances temporelles
+\item
+  Un système temps-réel n'est pas forcément un système rapide, c'est un
+  système qui garantit des contraintes temporelles.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Deux types de systèmes Temps-Réel}
+
+\begin{itemize}
+\item
+  Temps-réel mou: un résultat en retard diminue la qualité de service,
+  mais même en retard le résultat est toujours utile.
+
+  \begin{itemize}
+  \item
+    Exemple: un distributeur de billets devrait répondre à la pression
+    d'une touche en moins de $250 ms$, un retard diminue l'ergonomie,
+    mais n'est pas dramatique.
+  \end{itemize}
+\item
+  Temps-réel dur: un résultat en retard est inutile
+
+  \begin{itemize}
+  \item
+    Exemple: déclenchement de l'airbag dans une voiture
+  \end{itemize}
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Types de contraintes}
+
+\begin{itemize}
+\item
+  Précision: il faut effectuer une action à un moment précis dans le
+  temps (horloge électronique).
+\item
+  Temps de réponse: effectuer une action avant son échéance (freinage
+  pour un système de contrôle de vitesse) ou avec un temps moyen fixé
+  (décompresseur video, 24 images par secondes environ).
+\item
+  Rendement: nombre de requêtes traitées par unité de temps (robot de
+  production dans une usine)
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Types de tâches}
+
+\begin{itemize}
+\item
+  Tâches périodiques, la tâche est activée à intervalles réguliers avec
+  une durée $C_i$ et une période $T_i$.
+\item
+  Tâches sporadiques, la tâche s'active à un instant quelconque,
+  néanmoins il existe un temps minimal entre deux activations
+\item
+  Tâches apériodiques, on ne peut faire aucune hypothèse sur l'instant
+  d'activation des tâches
+\end{itemize}
+
+\end{frame}
+
+\section{Ordonnancement}
+
+\begin{frame}\frametitle{Architecture mono-coeur ou multi-coeur}
+
+\begin{itemize}
+\item
+  Ordonnancement sur un processeur:
+
+  \begin{itemize}
+  \item
+    Plusieurs tâches s'exécutent sur un seul processeur. Un
+    ordonnanceur, passe d'une tâche à l'autre pour simuler une execution
+    concurrente.
+  \end{itemize}
+\item
+  Ordonnancement sur multi-processeur:
+
+  \begin{itemize}
+  \item
+    Plusieurs tâches s'exécutent sur plusieurs processeurs, en
+    parallèle.
+  \end{itemize}
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Priorités}
+
+\begin{itemize}
+\item
+  Les tâches peuvent être ordonnées par niveau de priorité
+\item
+  Les priorités peuvent être statiques ou changer au cours du temps
+  (dynamiques).
+\item
+  En général dans un système temps-réel:
+
+  \begin{itemize}
+  \item
+    Une tâche n'est jamais bloqué par une tâche de moindre priorité
+    (sauf problème d'inversion de priorité)
+  \item
+    On minimise les changements de contexte entre tâches de même
+    priorité
+  \end{itemize}
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Ordonnancement}
+
+\begin{itemize}
+\item
+  Comment répartir le temps processeur parmi un groupe de tâches ?
+
+  \begin{itemize}
+  \item
+    Peut-on garantir qu'aucune tâche ne ratera une échéance ?\\
+  \end{itemize}
+\item
+  Algorithmes statiques: table d'exécution ou analyse rate monotonic
+\item
+  Algorithmes dynamiques: EDF, LLF, \ldots{}
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Table d'exécution}
+
+\begin{itemize}
+\item
+  L'exécution des tâches est complétement statique.
+\item
+  L'ordre d'exécution des tâches est pilotée par une table donnée par
+  l'utilisateur.
+\item
+  Peut-être vérifé pour des tâches périodiques en considérant le PPCM de
+  toutes les périodes.
+\item
+  Avantages:
+
+  \begin{itemize}
+  \item
+    Ordre d'exécution connu et déterministe
+  \item
+    Algorithme simple
+  \end{itemize}
+\item
+  Désavantage:
+
+  \begin{itemize}
+  \item
+    Comment gérer des tâches sporadiques ?
+  \item
+    Les caractéristiques du systèmes doivent êtres connues en avance
+  \end{itemize}
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Rate monotonic analysis}
+
+\begin{itemize}
+\item
+  Hypothèses:
+
+  \begin{itemize}
+  \item
+    Pas d'intéraction entre taches (Pas de partage de ressources)
+  \item
+    Taches périodiques de période $T_i$ et de durée $C_i$.
+  \item
+    L'échéance des tâches $D_i$ est supposée égale à $T_i$. Çàd, une
+    tâche doit être complétée avant sa prochaine activation.
+  \item
+    Les tâches sont préemptibles.
+  \item
+    On suppose le côut du changement de contexte négligeable.
+  \item
+    Un seul processeur
+  \end{itemize}
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Utilisation du processeur}
+
+\begin{itemize}
+\item
+  Taux d'utilisation: quantité de temps de traitement par les tâches par
+  rapport au temps total.
+
+  \begin{itemize}
+  \item
+    L'utilisation du processeur est définie comme
+    $U = \sum_{i=1}^n \frac{C_i}{T_i}$
+  \end{itemize}
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Rate monotonic analysis}
+
+\begin{itemize}
+\item
+  La priorité d'une tâche $i$ est égale à $P_i = \frac{1}{T_i}$.
+\item
+  Plus la fréquence est forte, plus la tâche est prioritaire.
+\item
+  C'est toujours la tâche la plus prioritaire qui est exécutée d'abord.
+\item
+  Propriétés:
+
+  \begin{itemize}
+  \item
+    {[}Liu \& Layland '73{]} Si $U \leq n.(2^{\frac{1}{n}} - 1)$ alors
+    il existe un ordonnancement satisfaisant toutes les échéances.
+  \item
+    C'est une condition \emph{suffisante}, mais \emph{pas} une condition
+    \emph{nécessaire}.
+  \end{itemize}
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Rate monotonic analysis}
+
+\begin{itemize}
+\item
+  On montre
+  $\lim_{n \rightarrow \infty} n(2^{1/n} - 1) = ln(2) \simeq 0.69$
+\item
+  Si la charge des tâches représente moins que $69\%$ du temps
+  processeur, le système admet un ordonnancement RM.
+\item
+  {[}Leung \& Whitehead '82{]} Le système RM est optimal parmi les
+  ordonnancements statiques. Çàd si n'importe quel ordonnancement
+  \emph{statique} peut ordonanncer un système de tâches, alors RM le
+  peut aussi.
+\item
+  Si toutes les périodes sont multiples entre elles (système harmonique)
+  alors la condition suffisante et maintenant \emph{nécessaire} devient
+  $U \leq 1$.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Théorème de la zone critique}
+
+Si l'ensemble des tâches arrivent dans le système simultanément et si
+elles respectent leur première échéance en RM, alors toutes les tâches
+respecteront leurs échéances futures. {[}Liu \& Layland '73{]}
+
+\end{frame}
+
+\begin{frame}\frametitle{Exemple 1}
+
+\begin{itemize}
+\item
+  Système de deux tâches $T_1 = 2s, C_1 = 1s$ et $T_2 = 3s , C_2=10s$.
+\item
+  Le système est-il ordonnançable avec la méthode RM ?
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Exemple 1}
+
+\begin{itemize}
+\item
+  Système de deux tâches $T_1 = 2s, C_1 = 1s$ et $T_2 = 3s , C_2=10s$.
+\item
+  Utilisation $1/2 + 3/10 = 80 \%$
+\item
+  Or $80\% \leq 2(2^{1/2} - 1) \simeq 83\%$, ordonnançable !
+\end{itemize}
+
+\begin{center}
+
+\begin{RTGrid}[width=6cm]{2}{20}
+
+\multido{\n=0+2}{10}{
+\TaskArrDead{1}{\n}{2} 
+\TaskExecDelta{1}{\n}{1} 
+}
+\multido{\n=0+10}{2}{
+\TaskArrDead{2}{\n}{10} 
+}
+
+\TaskExecution{2}{1}{2}
+\TaskExecution{2}{3}{4}
+\TaskExecution{2}{5}{6}
+
+\TaskExecution{2}{11}{12}
+\TaskExecution{2}{13}{14}
+\TaskExecution{2}{15}{16}
+
+\end{RTGrid}
+
+\end{center}
+
+\end{frame}
+
+\begin{frame}\frametitle{Exemple 2}
+
+\begin{itemize}
+\item
+  Système de deux tâches $T_1 = 2s, C_1 = 1s$ et $T_2 = 5s , C_2=10s$.
+\item
+  Le système est-il ordonnançable ?
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Exemple 2}
+
+\begin{itemize}
+\item
+  Système de deux tâches $T_1 = 2s, C_1 = 1s$ et $T_2 = 5s , C_2=10s$.
+\item
+  Utilisation $1/2 + 5/10 = 100 \%$
+\item
+  Or $100\% > 2(2^{1/2} - 1) \simeq 83\%$, on ne peut rien
+  conclure\ldots{}
+\end{itemize}
+
+\begin{center}
+
+\begin{RTGrid}[width=6cm]{2}{20}
+
+\RTBox{0}{10}
+
+\multido{\n=0+2}{10}{
+\TaskArrDead{1}{\n}{2} 
+\TaskExecDelta{1}{\n}{1} 
+}
+\multido{\n=0+10}{2}{
+\TaskArrDead{2}{\n}{10} 
+}
+
+\TaskExecution{2}{1}{2}
+\TaskExecution{2}{3}{4}
+\TaskExecution{2}{5}{6}
+\TaskExecution{2}{7}{8}
+\TaskExecution{2}{9}{10}
+
+\TaskExecution{2}{11}{12}
+\TaskExecution{2}{13}{14}
+\TaskExecution{2}{15}{16}
+\TaskExecution{2}{17}{18}
+\TaskExecution{2}{19}{20}
+
+
+\end{RTGrid}
+
+\end{center}
+
+\begin{itemize}
+\item
+  Mais système ordonnonçable, théorème de la zone critique.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Exemple 3}
+
+\begin{itemize}
+\item
+  Système de deux tâches $T_1 = 5s, C_1 = 2.5s$ et
+  $T_2 = 7.5s , C_2=3s$.
+\item
+  Le système est-il ordonnançable ?
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Exemple 3}
+
+\begin{itemize}
+\item
+  Système de deux tâches $T_1 = 5s, C_1 = 2.5s$ et
+  $T_2 = 7.5s , C_2=3s$.
+\item
+  Utilisation $2.5/5 + 3/7.5 = 90 \%$
+\item
+  Or $90\% > 2(2^{1/2} - 1) \simeq 83\%$, on ne peut rien
+  conclure\ldots{}
+\end{itemize}
+
+\begin{center}
+
+\begin{RTGrid}[width=6cm]{2}{20}
+
+\RTBox{0}{10}
+
+\multido{\n=0+5}{4}{
+\TaskArrDead{1}{\n}{5} 
+\TaskExecDelta{1}{\n}{2.5} 
+}
+
+\multido{\n=0+7.5}{2}{
+\TaskArrDead{2}{\n}{7.5} 
+}
+
+\TaskExecution{2}{2.5}{5}
+\TaskExecution[color=red]{2}{7.5}{8}
+
+\end{RTGrid}
+\end{center}
+
+\begin{itemize}
+\item
+  Théorème de la zone critique: le système n'est pas ordonnançable en
+  RM.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Exemple 3}
+
+\begin{itemize}
+\item
+  Mais si on s'afffranchit de RM \ldots{}
+\end{itemize}
+
+\begin{center}
+
+\begin{RTGrid}[width=6cm]{2}{20}
+
+
+\multido{\n=0+5}{4}{
+\TaskArrDead{1}{\n}{5} 
+}
+\TaskExecution{1}{0}{2.5} 
+\TaskExecution{1}{5.5}{8} 
+\TaskExecution{1}{5.5}{8} 
+\TaskExecution{1}{11}{13.5} 
+\TaskExecution{1}{15}{17.5} 
+
+\multido{\n=0+7.5}{2}{
+\TaskArrDead{2}{\n}{7.5} 
+}
+
+\TaskExecution{2}{2.5}{5.5}
+\TaskExecution{2}{8}{11}
+\TaskExecution{2}{17.5}{20}
+
+\end{RTGrid}
+
+\end{center}
+
+\begin{itemize}
+\item
+  \ldots{} le système est ordonnançable.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Rate monotonic sur multi-processeur ?}
+
+\begin{itemize}
+\item
+  Problème ouvert.
+\item
+  Travaux de recherche en cours.
+\item
+  Voir par exemple, Min-Allah et al. J. Parallel Distib. Computing 2011.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Test d'ordonnancement pour tâches irrégulières}
+
+\begin{itemize}
+\item
+  Problème ouvert.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Ordonnancement dynamique (EDF)}
+
+\begin{itemize}
+\item
+  EDF: Earliest Deadline First
+\item
+  À tout instant t, le travail le plus prioritaire est celui dont
+  l'échéance est la plus courte.
+\item
+  Condition d'ordonnançabilité avec EDF (pour des tâches périodiques et
+  $D_i = C_i$) : $U \leq 1$.
+\item
+  EDF est optimal: si un ensemble de tâches est ordonnançable, alors il
+  est ordonnançable avec EDF.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Effet Domino}
+
+\begin{itemize}
+\item
+  Comportement très mauvais en cas de surcharge.
+\item
+  Avalanche d'échéance manquées
+\end{itemize}
+
+\begin{center}
+
+\begin{RTGrid}[width=10cm]{4}{24}
+
+\multido{\n=0+5}{4}{
+\TaskArrDead{1}{\n}{5} 
+}
+
+\TaskExecution{1}{0}{2} 
+\TaskExecution{1}{8}{10} 
+\TaskExecution{1}{14}{15} 
+\TaskExecution[color=red]{1}{15}{16} 
+
+\multido{\n=0+6}{4}{
+\TaskArrDead{2}{\n}{6} 
+}
+
+\TaskExecution{2}{2}{4} 
+\TaskExecution{2}{10}{12} 
+\TaskExecution[color=red]{2}{18}{20} 
+
+
+\multido{\n=0+7}{4}{
+\TaskArrDead{3}{\n}{7} 
+}
+
+\TaskExecution{3}{4}{6} 
+\TaskExecution{3}{12}{14} 
+\TaskExecution{3}{20}{21} 
+\TaskExecution[color=red]{3}{21}{22} 
+
+
+\multido{\n=0+8}{4}{
+\TaskArrDead{4}{\n}{8} 
+}
+
+\TaskExecution{4}{6}{8} 
+\TaskExecution[color=red]{4}{16}{18} 
+
+\end{RTGrid}
+
+\end{center}
+
+\end{frame}
+
+\begin{frame}\frametitle{Effet Domino}
+
+\begin{itemize}
+\item
+  Rate Monotonic à un meilleur comportement, les tâches de priorité
+  faible sont affectées les premières.
+\item
+  Mais certaines tâches peuvent ne jamais être exécutées.
+\end{itemize}
+
+\begin{center}
+
+\begin{RTGrid}[width=10cm]{4}{24}
+
+\multido{\n=0+5}{4}{
+\TaskArrDead{1}{\n}{5} 
+}
+
+\TaskExecution{1}{0}{2} 
+\TaskExecution{1}{5}{7} 
+\TaskExecution{1}{10}{12} 
+\TaskExecution{1}{15}{17} 
+
+\multido{\n=0+6}{4}{
+\TaskArrDead{2}{\n}{6} 
+}
+
+\TaskExecution{2}{2}{4} 
+\TaskExecution{2}{7}{9} 
+\TaskExecution{2}{12}{14} 
+\TaskExecution{2}{18}{20} 
+
+\multido{\n=0+7}{4}{
+\TaskArrDead{3}{\n}{7} 
+}
+
+\TaskExecution{3}{4}{5} 
+\TaskExecution[color=red]{3}{9}{10} 
+\TaskExecution[color=red]{3}{14}{15} 
+\TaskExecution[color=red]{3}{17}{18} 
+
+
+\multido{\n=0+8}{4}{
+\TaskArrDead{4}{\n}{8} 
+}
+
+\end{RTGrid}
+
+\end{center}
+
+\end{frame}
+
+\begin{frame}\frametitle{Comparaison RM et EDF}
+
+\begin{itemize}
+\item
+  RM avantages:
+
+  \begin{itemize}
+  \item
+    Très simple à implémenter
+  \item
+    Prédictible
+  \item
+    Priorités statiques
+  \end{itemize}
+\item
+  RM inconvénients:
+
+  \begin{itemize}
+  \item
+    Modèle restrictif
+  \item
+    Utilisation du processeur sous-optimale
+  \end{itemize}
+\item
+  EDF avantages:
+
+  \begin{itemize}
+  \item
+    Simple à implémenter
+  \item
+    Bonne utilisation du processeur
+  \item
+    Réactif pour les tâches à échéances courtes
+  \end{itemize}
+\item
+  EDF inconvénients:
+
+  \begin{itemize}
+  \item
+    Mauvais comportement en cas de surcharge (effet domino)
+  \item
+    Moins prédictible
+  \end{itemize}
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Problèmes liés à l'exécution concurrente}
+
+\begin{itemize}
+\item
+  Partage de ressources:
+
+  \begin{itemize}
+  \item
+    Partage de temps processeur
+  \item
+    Accès concurrent à la mémoire
+  \item
+    Accès concurrent aux périphériques
+  \end{itemize}
+\item
+  Problèmes:
+
+  \begin{itemize}
+  \item
+    Cohérence mémoire
+  \item
+    Dead-lock
+  \item
+    Race-condition
+  \item
+    Famine
+  \item
+    Inversion de priorité
+  \end{itemize}
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Sémaphore}
+
+\begin{itemize}
+\item
+  Pour protéger l'accès aux ressources partagées on utilise des
+  sémaphores
+\item
+  Un sémaphore est composé de:
+
+  \begin{itemize}
+  \item
+    Un compteur $S_n$ initialisé lors de la création du sémaphore
+  \item
+    Une liste de tâches en attente, initialement vide
+  \end{itemize}
+\item
+  Il comporte deux opérations:
+
+  \begin{itemize}
+  \item
+    $P(S)$: prise du sémaphore (on demande une ressource)
+  \item
+    $V(S)$: relachement du sémaphore (on libère une ressource).
+  \end{itemize}
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Sémaphore}
+
+\begin{itemize}
+\item
+  $P(S)$
+
+  \begin{itemize}
+  \item
+    On décrémente $S_n$
+  \item
+    Si $S_n < 0$ on met la tâche en attente et on la bloque. La tâche ne
+    sera relachée que lorsque $S_n$ deviendra positif.
+  \end{itemize}
+\item
+  $V(S)$
+
+  \begin{itemize}
+  \item
+    On incrémente $S_n$
+  \item
+    On débloque la première tâche en attente.
+  \end{itemize}
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}[fragile]\frametitle{Vérrou}
+
+\begin{itemize}
+\item
+  Un vérrou est un sémaphore avec $S_n$ initialisé à 1.
+\item
+  Une seule tâche à la fois peut accéder à la ressource:
+\end{itemize}
+
+\begin{verbatim}
+   P(S)
+   accès ressource
+   V(S)
+\end{verbatim}
+
+\end{frame}
+
+\begin{frame}[fragile]\frametitle{Implémentation d'un Vérrou}
+
+\begin{itemize}
+\item
+  Pour implémenter un vérrou il faut utiliser des opérations atomiques.
+\item
+  Par exemple sur ARM on peut utiliser SWP qui effectue une lecture
+  suivie d'une écriture de manière atomique:
+\end{itemize}
+
+\begin{verbatim}
+  #define LOCK 0
+  MOV r0, #LOCK
+  lock:
+   SWP r0,r0, [verrou] @ échange atomique r0 et verrou
+   CMP r0, #LOCK       @ verrou déjà pris ?
+   BEQ lock            @ alors on essaye à nouveau
+\end{verbatim}
+
+(Les ARMv6 proposent une manière plus efficace en utilisant les
+instructions LDREX et STREX.)
+
+\end{frame}
+
+\begin{frame}[fragile]\frametitle{Deadlock}
+
+\begin{itemize}
+\item
+  Un Deadlock (interblocage) se produit lorsqu'au moins deux processus
+  s'attendent mutuellement.
+\item
+  Exemple
+\end{itemize}
+
+\begin{verbatim}
+Tâche A         Tâche B 
+  P(1)            P(2)   
+  P(2)            P(1)
+    action A        action B
+  V(2)            V(1)
+  V(1)            V(2)          
+
+Exemple d'inter-blocage:
+
+ A obtient 1
+ B obtient 2
+ A attend 2 et B attend 1, tout le monde est bloqué ! 
+\end{verbatim}
+
+\end{frame}
+
+\begin{frame}\frametitle{Inversion de priorité}
+
+\begin{itemize}
+\item
+  Une inversion de priorité ce produit quand une tâche $T_1$ de priorité
+  haute attend un verrou qui est détenu par une tâche $T_2$ de priorité
+  faible.
+\item
+  On peut éviter le problème par \emph{héritage de priorité}. On
+  augmente temporairement la priorité de $T_2$ à celle de $T_1$ pour
+  qu'elle libère au plus vite la ressource.
+\item
+  Bug du Mars Pathfinder en 1997 alors que le robot était déjà sur Mars.
+  Reproduit sur simulateur et corrigé à distance, en activant l'héritage
+  de priorité sur les sémaphores.
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Exemple: Inversion de priorité}
+
+\begin{itemize}
+\item
+  La tâche $T_3$ possède un verrou requis par $T_1$
+\item
+  La priorité de $T_3$ est augmentée temporairement, la tâche $T_2$
+  devra attendre mais le verrou sera libéré rapidement.
+\end{itemize}
+
+\begin{RTGrid}[width=10cm]{3}{22}
+\TaskArrDead{3}{0}{20}
+\TaskExecution{3}{0}{2}
+\TaskLock{3}{2}{S}
+\TaskExecution[color=white,execlabel=S]{3}{2}{3}
+\TaskArrDead{1}{3}{9}
+\TaskExecution{1}{3}{4}
+\TaskLock{1}{4}{S}
+\Inherit{1}{3}{4}
+\TaskExecution[color=white,execlabel=S]{3}{4}{5}
+\TaskArrDead{2}{5}{12}
+\TaskExecution[color=white,execlabel=S]{3}{5}{7}
+\TaskUnlock{3}{7}{S}
+\TaskExecution[color=white,execlabel=S]{1}{7}{9}
+\TaskUnlock{1}{9}{S}
+\TaskExecution{1}{9}{10}
+\TaskExecution{2}{10}{15}
+\TaskExecution{3}{15}{17}
+\end{RTGrid}
+
+\end{frame}
+
+\begin{frame}\frametitle{Gestion des événements sporadiques}
+
+\begin{itemize}
+\item
+  Jusqu'à maintenant on a considéré surtout des tâches périodiques
+\item
+  Comment gérer des événements sporadiques, comme la lecture d'une
+  touche depuis le clavier ?
+\item
+  Deux méthodes:
+
+  \begin{itemize}
+  \item
+    Par polling (ou scrutation)
+  \item
+    Par interruption
+  \end{itemize}
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Gestion par polling}
+
+\begin{itemize}
+\item
+  Une tâche va périodiquement vérifier si une touche à été appuyée.
+\item
+  Avantages:
+
+  \begin{itemize}
+  \item
+    Simple à mettre en place
+  \end{itemize}
+\item
+  Inconvénients
+
+  \begin{itemize}
+  \item
+    Pour être réactif, la période de scrutation doit être faible
+  \item
+    Énergivore
+  \end{itemize}
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Gestion par interruption}
+
+\begin{itemize}
+\item
+  On demande au processeur de lever une intérruption lorsqu'une touche
+  est appuyée
+\item
+  L'interruption intérromp les tâches en cours, et permet l'exécution de
+  la tâche sporadique.
+\item
+  Avantages:
+
+  \begin{itemize}
+  \item
+    Économe en énergie, on n'exécute la tâche que quand un évenement est
+    reçu
+  \item
+    Réactif
+  \end{itemize}
+\item
+  Inconvénients:
+
+  \begin{itemize}
+  \item
+    Moins prédictible et plus complèxe à implémenter
+  \item
+    Pour ne pas bloquer le système le traitement d'interruption doit
+    être très court, il faut découpler l'enregistrement de l'évenement
+    et le traîtement associé.
+  \end{itemize}
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Bibliographie}
+
+\begin{itemize}
+\item
+  Cours Systèmes Embarqués Temps Réel, Samuel Tardieu, ENST
+\item
+  Lecture from Giuseppe Lipari, Scuola Superiore Sant'Anna
+\item
+  Ordonnancement Temps Réel, présentation de Pierre-Yves Duval du CPPM,
+  à l'École d'informatique temps réel 2002.
+\item
+  Cours de Benoît Miramond, ENSEA
+\item
+  What Really Happened on Mars by Glenn Reeves of the JPL Pathfinder
+  team
+\end{itemize}
+
+\end{frame}
+
+\end{document}
