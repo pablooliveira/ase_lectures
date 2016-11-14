@@ -14,8 +14,13 @@ C4.pdf: C4.md
 C3.pdf: C3.md 
 	pandoc --variable fontsize=9pt -t beamer -f markdown $< -o $@
 
+C1.pdf: C1.md
+	pandoc -s -t beamer -f markdown $< -o C1.tex
+	pdflatex C1.tex
+
+
 %.pdf: %.md
-	pandoc -t beamer -f markdown $< -o $@
+	pandoc --latex-engine=/usr/bin/xelatex  -f markdown $< -o $@
 
 
 clean:
