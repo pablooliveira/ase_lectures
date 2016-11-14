@@ -8,9 +8,11 @@ html: $(ALL_HTML)
 pdf: $(ALL_PDF)
 
 %.html: %.md
-	pandoc -s --mathjax -f markdown $< -o $@
+	pandoc -s --mathjax -c pandoc.css --toc -f markdown $< -o $@
+%.tex: %.md
+	pandoc -S -s --latex-engine=/usr/bin/xelatex  -f markdown $< -o $@
 %.pdf: %.md
-	pandoc -f markdown $< -o $@
+	pandoc --latex-engine=/usr/bin/xelatex  -f markdown $< -o $@
 
 clean:
 	rm -f $(ALL_HTML) $(ALL_PDF)
